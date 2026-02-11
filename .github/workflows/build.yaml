@@ -1,0 +1,111 @@
+name: Build Container Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        type: string
+        required: true
+        description: 'Internal release version'
+        default: '0'
+      agentgateway:
+        type: string
+        required: true
+        description: 'AgentGateway version'
+        default: '0.12.0'
+
+jobs:
+  build_and_push:
+    name: Push image to Github Container Registry
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      attestations: write
+      id-token: write
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=${{ github.event.inputs.agentgateway }}-r${{ github.event.inputs.release }}-tumbleweed
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          provenance: false
+          build-args: |
+            AGENTGATEWAY_VERSION=${{ github.event.inputs.agentgateway }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      #- name: Scan Docker Image
+      #  if: ${{ success() }}
+      #  env:
+      #    IMAGE: ${{ vars.ARTIFACTORY_IMG_URL }}/couchdb:${{ github.event.inputs.couchdb }}-r${{ github.event.inputs.release }}-tumbleweed
+      #    COUCHDB_VERSION: ${{ github.event.inputs.couchdb }}
+      #    RELEASE_VERSION: ${{ github.event.inputs.release }}
+      #    MEND_EMAIL: ${{ secrets.MEND_EMAIL }}
+      #    MEND_ORGANIZATION: ${{ secrets.MEND_ORGANIZATION }}
+      #    MEND_URL: ${{ secrets.MEND_URL }}
+      #    MEND_USER_KEY: ${{ secrets.MEND_USER_KEY }}
+      #  run: |
+      #    rm -f ${{ github.workspace }}/mend
+      #    curl https://downloads.mend.io/cli/linux_amd64/mend -o ${{ github.workspace }}/mend && chmod +x ${{ github.workspace }}/mend
+      #    ${{ github.workspace }}/mend image ${IMAGE,,} -s "OpenScape UC Portfolio//OSEM third party applications//couchdb-osem-docker-image - $COUCHDB_VERSION-r$RELEASE_VERSION-tumbleweed"
+
+      - name: Create release information
+        if: ${{ success() }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AGENTGATEWAY_VERSION: ${{ github.event.inputs.agentgateway }}
+          IMAGE: ghcr.io/${{ github.repository }}:${{ github.event.inputs.agentgateway }}-r${{ github.event.inputs.release }}-tumbleweed
+        run: |
+          # Add step summary
+          {
+            echo "# Agent Gateway"
+            echo ""
+            echo "Running in a minimal openSUSE Tumbleweed Image."
+            echo ""
+            echo "${IMAGE}"
+            echo ""
+            echo "### Included versions"
+            echo ""
+            echo "| Package Name              | Version         |"
+            echo "|---------------------------|-----------------|"
+            echo "| Agent Gateway | $AGENTGATEWAY_VERSION |"
+          } >> $GITHUB_STEP_SUMMARY
+
+          cat > ${{ github.workspace }}/release-notes.md <<EOF
+          ## Agent Gateway release ${{ github.event.inputs.agentgateway }}-${{ github.event.inputs.release }}
+          - **Agent Gateway version**: $AGENTGATEWAY_VERSION
+          ```
+          docker pull ${IMAGE}
+          ```
+
+          EOF
+          gh release create "$AGENTGATEWAY_VERSION-r${{ github.event.inputs.release }}-tumbleweed" \
+              --repo="$GITHUB_REPOSITORY" \
+              --title="$AGENTGATEWAY_VERSION-r${{ github.event.inputs.release }}-tumbleweed" \
+              --notes-file release-notes.md
+
+      - name: Cleanup environment
+        if: ${{ always() }}
+        run: |
+          git clean -ffdx

@@ -1,0 +1,15 @@
+config:
+  logging:
+    level: debug
+  adminAddr: 0.0.0.0:15000
+binds:
+- port: 3000
+  listeners:
+  - protocol: HTTP
+    name: mcp
+    hostname: 0.0.0.0
+    routes:
+    - hostnames: []
+      matches:
+      - path:
+          exact: /mcp
