@@ -27,8 +27,12 @@ COPY --from=install --chmod=444 /var/lib/ca-certificates/ca-bundle.pem /etc/ssl/
 WORKDIR /app
 ADD config.yaml /app/config.yaml
 
+FROM scratch
+
+COPY --from=base / /
+
 ENV SSL_CERT_FILE=/etc/ssl/ca-bundle.pem
 
-EXPOSE 3000 15000
+EXPOSE 3000/tcp 15000/tcp
 
 CMD ["/usr/bin/agentgateway", "-f", "/app/config.yaml"]
